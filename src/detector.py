@@ -3,9 +3,9 @@ from pathlib import Path
 
 import phonenumbers
 import spacy
-# import ahocorasick
+from spacy_curated_transformers.tokenization.wordpiece_encoder import _strip_accents
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_NAMES_PATH = DATA_DIR / "irish_given_names.txt"
 DEFAULT_AMBIGUOUS_PATH = DATA_DIR / "ambiguous_names.txt"
 DEFAULT_EIRCODE_PATH = DATA_DIR / "eircode_prefixes.txt"
@@ -20,7 +20,7 @@ def _load_lines(path, lower=False):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            out.add(line.lower() if lower else line)
+            out.add(_strip_accents(line.lower()) if lower else line)
     return out
 
 
@@ -42,7 +42,7 @@ GREETING_WORDS = {
     "evening",
 }
 
-PHONE_REGIONS = ("IE", "GB", "US")
+PHONE_REGIONS = ("IE", "GB", "US", "UA")
 
 # Last resort filter for single token PERSON entities the NER misfires on
 SINGLE_TOKEN_DENY = {
@@ -65,13 +65,31 @@ PATTERNS = {
     "EMAIL": re.compile(r"\b[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     "PPS_NUMBER": re.compile(r"\b\d{7}[A-Z]{1,2}\b"),
     "EIRCODE": re.compile(r"\b([A-Z]\d[\dW])\s?([A-Z0-9]{4})\b", re.IGNORECASE),
-    "IBAN": re.compile(r"\bIE\d{2}(?:\s?[A-Z0-9]{4}){4}\s?\d{2}\b", re.IGNORECASE),
-    "UNIX_PATH": re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+"),
+    "IBAN": re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}\b"),
+    "USERNAME": re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+"),
+    "IP_ADDRESS": re.compile(
+        r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"
+    ),
 }
+
+CREDIT_CARD_RE = re.compile(
+    r"\b(?:"
+    r"4\d{3}(?:[ -]?\d{4}){3}"  # Visa starts with 4
+    r"|5[1-5]\d{2}(?:[ -]?\d{4}){3}"  # MasterCard 51-55
+    r")\b"
+)
+
+# Only known prefix formats for AWS/Google keys
+# entropy deleted due to big amount of FPs. Will be fixed and brought back, as well as more 'secrets'
+SECRET_CANDIDATE_RE = re.compile(
+    r"\b(?:"
+    r"|AKIA[0-9A-Z]{16}"  # AWS access key
+    r"|AIza[0-9A-Za-z\-_]{35}"  # Google API key
+    r")\b"
+)
 
 # Token shape for the gazetteer scan
 _NAME_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z'-]+\b")
-
 _MODEL_CACHE = {}
 
 
@@ -88,25 +106,10 @@ class PIIDetector:
         path = Path(names_path) if names_path else DEFAULT_NAMES_PATH
         self.irish_names = _load_lines(path, lower=True)
 
-        # Aho-Corasick
-        """ self._names_automaton = self._build_automaton(self.irish_names)
-
-    # @staticmethod
-    def _build_automaton(names):
-        if not names:
-            return None
-        automaton = ahocorasick.Automaton()
-        for name in names:
-            automaton.add_word(name, name)
-        automaton.make_automaton()
-        return automaton
-"""
-
     def _overlaps(self, a_start, a_end, b_start, b_end):
         return a_start < b_end and a_end > b_start
 
     def _trim_greeting(self, ent):
-        # Strip leading greeting tokens at the token level so character offsets stay correct (like 'Hi Sean' and 'Thanks so much Mary')
         i = 0
         while i < len(ent):
             token = ent[i].text.lower().rstrip(":,")
@@ -164,10 +167,15 @@ class PIIDetector:
 
     def _regex_spans(self, text):
         out = []
+
         for label, pattern in PATTERNS.items():
             for match in pattern.finditer(text):
-                if label == "EIRCODE" and match.group(1).upper() not in VALID_EIRCODE_PREFIXES:
-                    continue
+                if label == "EIRCODE":
+                    routing_key = match.group(1).upper()
+
+                    if routing_key not in VALID_EIRCODE_PREFIXES:
+                        continue
+
                 out.append(
                     {
                         "text": match.group(),
@@ -177,7 +185,10 @@ class PIIDetector:
                         "source": "regex",
                     }
                 )
+
         out.extend(self._phone_spans(text))
+        out.extend(self._credit_card_spans(text))
+        out.extend(self._secret_spans(text))
         return out
 
     def _phone_spans(self, text):
@@ -197,6 +208,59 @@ class PIIDetector:
                     "source": "regex",
                 }
         return list(seen.values())
+
+    # Luhn checksum validation adapted from:
+    # J. Allen, "Novel Ways of Simulating & Visualizing Luhn Checksum with Python," Medium, 2026.
+    # https://medium.com/@jallenswrx2016/novel-ways-of-simulating-visualizing-luhn-checksum-with-python-7a2eb3e3fbba
+    def _luhn_valid(self, value):
+        digits = [int(ch) for ch in value if ch.isdigit()]
+        if not 13 <= len(digits) <= 19:
+            return False
+
+        checksum = 0
+        for i, digit in enumerate(digits[::-1]):
+            if i % 2 == 1:
+                digit *= 2
+                if digit > 9:
+                    digit -= 9
+            checksum += digit
+
+        return checksum % 10 == 0
+
+    def _credit_card_spans(self, text):
+        spans = []
+        for match in CREDIT_CARD_RE.finditer(text):
+            raw = match.group()
+            digits = "".join(ch for ch in raw if ch.isdigit())
+
+            if not self._luhn_valid(digits):
+                continue
+
+            spans.append(
+                {
+                    "text": raw,
+                    "label": "CREDIT_CARD",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "source": "regex",
+                }
+            )
+        return spans
+
+    def _secret_spans(self, text):
+
+        spans = []
+        for match in SECRET_CANDIDATE_RE.finditer(text):
+            spans.append(
+                {
+                    "text": match.group(),
+                    "label": "API_KEY",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "source": "regex",
+                }
+            )
+        return spans
 
     def _person_spans(self, text):
         doc = self.nlp(text)
@@ -227,40 +291,6 @@ class PIIDetector:
         found = self._keep_best(found)
         return self._add_name_variants(text, found)
 
-        # Aho-Corasick variant
-
-    """
-            if self._names_automaton is None:
-                return []
-            lowered = text.lower()
-            hits = []
-            for end_idx, name in self._names_automaton.iter(lowered):
-                start = end_idx - len(name) + 1
-                end = end_idx + 1
-                # AC matches substrings, so check word boundaries by hand -
-                # Rejects 'ali' inside 'alignment'.]
-                if start > 0 and self._is_name_char(text[start - 1]):
-                    continue
-                if end < len(text) and self._is_name_char(text[end]):
-                    continue
-                original = text[start:end]
-                is_capitalised = original[0].isupper()
-                if not is_capitalised and name in AMBIGUOUS_NAMES:
-                    continue
-                hits.append({
-                    "text": original,
-                    "label": "PERSON",
-                    "start": start,
-                    "end": end,
-                    "source": "gazetteer",
-                })
-            return hits
-        @staticmethod
-        def _is_name_char(ch):
-            # Used by AC for word boundary checks
-            return ch.isalpha() or ch in "'-"
-    """
-
     def _gazetteer_spans(self, text):
         # Catch Irish names the NER missed
         if not self.irish_names:
@@ -269,7 +299,7 @@ class PIIDetector:
         hits = []
         for match in _NAME_TOKEN_RE.finditer(text):
             token = match.group()
-            lower = token.lower()
+            lower = _strip_accents(token.lower())
             if lower not in self.irish_names:
                 continue
 
@@ -300,8 +330,8 @@ class PIIDetector:
             if span["label"] != "PERSON":
                 continue
 
-            # Try extending from the full span text and from each part
-            # Each option becomes a forward search anchor
+            # Try extending from the full span text and from each part.
+            # Each option becomes a forward search anchor.
             options = {span["text"]}
             parts = span["text"].split()
             if len(parts) >= 2:
@@ -316,17 +346,20 @@ class PIIDetector:
                 for match in re.finditer(forward, text):
                     matched_text = match.group()
                     start, end = match.start(), match.end()
-
-                    # Trim trailing greeting words. spaCy can misclassifi 'Hi' as a name token because it's capitalised
                     words = matched_text.split()
-                    while len(words) > 1 and words[-1].lower().rstrip(",.:") in GREETING_WORDS:
-                        words.pop()
+                    seed_word_count = len(option.split())
+                    truncated = list(words[:seed_word_count])
+                    for word in words[seed_word_count:]:
+                        if word.lower().rstrip(",.:") in GREETING_WORDS:
+                            break
+                        truncated.append(word)
+                    words = truncated
                     new_text = " ".join(words)
                     if new_text != matched_text:
                         end = start + len(new_text)
                         matched_text = new_text
 
-                    if len(words) < 2:
+                    if len(words) <= seed_word_count:
                         continue
 
                     clashes = any(
