@@ -1,0 +1,17 @@
+# work_email
+Hi [PERSON/G0: Rachel], I noticed you've been leaving early. I need you to stick to your hours. — [PERSON/G1: David Morrison] ([EMAIL: david.morrison@company.ie])
+---
+# scam_text
+Hi [PERSON/G0: James Pitt], your Bank of Ireland account has been flagged. Call [PHONE: 089 876 5432] ASAP. Ok, [PERSON/G0: James]? Hurry up, [PERSON/G0: Jamie], I'm waiting.
+---
+# slack_messages
+[10:42] [PERSON/G0: Aoife Ryan]: hey [PERSON/G1: liam], can you push the updated config to staging?
+[10:43] [PERSON/G1: Liam McGrath]: doing it now. fyi the prod cluster credentials moved, ping [PERSON/G2: Eoin] if you need access
+[10:45] [PERSON/G0: Aoife]: thanks, will do
+---
+# server_log_with_ips
+[2024-04-22 03:14:15] INFO Login successful from [IP_ADDRESS: 192.168.1.45]
+[2024-04-22 03:14:22] WARN Failed login attempt from [IP_ADDRESS: 203.45.78.123] (user: admin)
+[2024-04-22 03:14:30] WARN Failed login attempt from [IP_ADDRESS: 203.45.78.123] (user: root)
+[2024-04-22 03:14:45] ERROR Brute force detected from [IP_ADDRESS: 203.45.78.123]. Blocking.
+---
