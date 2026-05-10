@@ -3,7 +3,13 @@ from dataclasses import dataclass
 
 from faker import Faker
 
-TITLE_WORDS = {"mr", "mrs", "ms", "dr", "prof"}
+TITLE_WORDS = {"mr", "mrs", "ms", "dr", "prof", "miss", "phd", "cs", "nc"}
+
+
+@dataclass
+class Mention:
+    text: str
+
 
 LEADING_DETERMINERS = (
     TITLE_WORDS
@@ -108,7 +114,9 @@ class PIIMasker:
                 name_map = self._name_parts(group.anchor, fake_name)
 
             for mention in group.mentions:
-                record = self._plan_replacement(text, mention, group, fake_name, name_map)
+                record = self._plan_replacement(
+                    text, mention, group, fake_name, name_map
+                )
                 if record is not None:
                     candidates.append(record)
 
@@ -141,7 +149,9 @@ class PIIMasker:
         if actual.strip().lower() != mention_text.lower():
             return None
 
-        replacement_text = self._replacement_text(mention_text, fake_name, name_map, group.label)
+        replacement_text = self._replacement_text(
+            mention_text, fake_name, name_map, group.label
+        )
 
         return Replacement(
             original=mention_text,
@@ -189,10 +199,16 @@ class PIIMasker:
 
     def _infer_gender(self, group):
         # Pronouns first
-        gender_mentions = list(group.mentions) + list(getattr(group, "gender_mentions", []))
+        gender_mentions = list(group.mentions) + list(
+            getattr(group, "gender_mentions", [])
+        )
 
-        has_female = any(m["text"].strip().lower() in FEMALE_PRONOUNS for m in gender_mentions)
-        has_male = any(m["text"].strip().lower() in MALE_PRONOUNS for m in gender_mentions)
+        has_female = any(
+            m["text"].strip().lower() in FEMALE_PRONOUNS for m in gender_mentions
+        )
+        has_male = any(
+            m["text"].strip().lower() in MALE_PRONOUNS for m in gender_mentions
+        )
 
         if has_female and not has_male:
             return "F"
