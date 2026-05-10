@@ -1,4 +1,23 @@
-spacy==3.7.2
-faker==20.1.0
-pytest==7.4.0
-streamlit==1.28.0
+# Core NLP
+spacy==3.7.5
+spacy-curated-transformers==0.2.2
+en-core-web-trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.7.3/en_core_web_trf-3.7.3-py3-none-any.whl
+
+# Coreference resolution
+fastcoref==2.1.6
+torch==2.10.0
+transformers==4.46.3
+
+# PII detection helpers
+phonenumbers==9.0.29
+
+# Masking / fake data generation
+Faker==40.13.0
+
+# Web UI
+streamlit==1.56.0
+pandas==3.0.2
+
+# Testing
+pytest==9.0.2
+pytest-cov==7.0.0
