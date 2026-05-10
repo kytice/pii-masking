@@ -82,10 +82,7 @@ CREDIT_CARD_RE = re.compile(
 # Only known prefix formats for AWS/Google keys
 # entropy deleted due to big amount of FPs. Will be fixed and brought back, as well as more 'secrets'
 SECRET_CANDIDATE_RE = re.compile(
-    r"\b(?:"
-    r"|AKIA[0-9A-Z]{16}"  # AWS access key
-    r"|AIza[0-9A-Za-z\-_]{35}"  # Google API key
-    r")\b"
+    r"\b(?:" r"AKIA[0-9A-Z]{16}" r"|AIza[0-9A-Za-z\-_]{35}" r")\b"
 )
 
 # Token shape for the gazetteer scan
@@ -151,7 +148,9 @@ class PIIDetector:
 
         for span in spans[1:]:
             last = kept[-1]
-            if not self._overlaps(span["start"], span["end"], last["start"], last["end"]):
+            if not self._overlaps(
+                span["start"], span["end"], last["start"], last["end"]
+            ):
                 kept.append(span)
                 continue
 
@@ -363,7 +362,8 @@ class PIIDetector:
                         continue
 
                     clashes = any(
-                        self._overlaps(start, end, s, e) and not (start <= s and end >= e)
+                        self._overlaps(start, end, s, e)
+                        and not (start <= s and end >= e)
                         for s, e in taken
                     )
                     if clashes:
