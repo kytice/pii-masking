@@ -265,3 +265,12 @@ def test_short_irish_names_detected(detector):
         assert any(
             name in r["text"] for r in person_hits
         ), f"{name} should be detected as PERSON"
+
+
+def test_variant_expander_stops_at_internal_greeting(detector):
+    text = "Claire Horgan Hi Suzanna, hope you're well"
+    results = detector.detect(text)
+    persons = [r["text"] for r in results if r["label"] == "PERSON"]
+
+    assert not any("Hi" in p for p in persons), f"Got: {persons}"
+    assert "Claire Horgan" in persons
