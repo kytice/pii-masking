@@ -36,7 +36,6 @@ src/
   entity_merger.py   # Merges NER entities and coref chains into groups
   masker.py          # Replaces each group with a synthetic identity
   app.py             # Streamlit web UI
-  main.py            # CLI demo / smoke test
 
 data/
   irish_given_names.txt          # Full CSO given-names list (gazetteer)
@@ -45,12 +44,24 @@ data/
   ambiguous_names.txt            # Names that are also common words
   eircode_prefixes.txt           # Valid Irish routing-key prefixes
 
+scripts/
+  build_name_list.py             # Builds the CSO given-names gazetteer
+  build_ambiguous_names.py       # Builds the ambiguous-names list
+
 tests/
   test_detector.py
+  test_coref_resolver.py
+  test_entity_merger.py
   test_masker.py
 
 evaluation/
-  evaluate.py                    # Precision/recall evaluation scripts
+  evaluate.py                    # Precision/recall evaluation on custom dataset
+  evaluate_ai4privacy.py         # Detection evaluation on ai4privacy dataset
+  parse_annotations.py           # Converts inline annotations to JSON
+  conll_parser.py                # CoNLL format parser (GUM dataset)
+  prepare_gum_docs.py            # Prepares GUM docs for PERSON-grouping eval
+  sample_annotations.txt         # Sanitised sample of the custom annotated dataset
+  GUM_test.txt                   # GUM test split
 ```
 
 ---
@@ -65,7 +76,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-The `en_core_web_trf` spaCy model and the fastcoref model are downloaded automatically on first run. No data is sent to any external server after that — everything runs locally.
+The `en_core_web_trf` spaCy model is installed directly via pip (included in `requirements.txt`). The fastcoref model weights are downloaded from HuggingFace on first run. No data is sent to any external server after that — everything runs locally.
 
 ---
 
@@ -79,15 +90,6 @@ streamlit run app.py
 ```
 
 Open the URL shown in the terminal (usually `http://localhost:8501`). Paste text or load the built-in sample, toggle PII categories in the sidebar, then click **Run masking**.
-
-### CLI demo
-
-```bash
-cd src
-python main.py
-```
-
-Runs the full pipeline on a hard-coded sample and prints detected entities, coreference chains, and the masked output.
 
 ---
 
